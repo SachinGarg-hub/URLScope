@@ -1,92 +1,166 @@
-import random
+import argparse
+import json
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
-from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
+
 from features import FEATURE_ORDER, extract_features
 
 OUT = Path("models")
 OUT.mkdir(exist_ok=True)
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
 
-SAFE_DOMAINS = ["google.com","wikipedia.org","github.com","python.org","microsoft.com","apple.com","amazon.com","openai.com","stackoverflow.com","kaggle.com","coursera.org","netflix.com"]
-PHISH_BRANDS = ["paypal","google","apple","amazon","bank","microsoft","instagram","wallet","crypto","netflix"]
-BAD_TLDS = ["tk","ml","ga","cf","gq","top","xyz","click","zip"]
+DEFAULT_DATASET_NAME = "final_dataset_with_all_features_v3.1.csv"
 
-def synthesize(n=1400):
-    rows = []
-    labels = []
-    for _ in range(n//2):
-        d = random.choice(SAFE_DOMAINS)
-        scheme = random.choice(["https", "https", "http"])
-        path = random.choice(["", "/about", "/docs", "/products", "/search?q=help"])
-        url = f"{scheme}://www.{d}{path}"
-        rows.append(extract_features(url, False)); labels.append(0)
-    for _ in range(n//2):
-        brand = random.choice(PHISH_BRANDS)
-        tld = random.choice(BAD_TLDS)
-        token = random.choice(["verify", "secure", "login", "update", "confirm", "account"])
-        style = random.randint(0, 4)
-        if style == 0:
-            url = f"http://{token}-{brand}-account.{tld}/login"
-        elif style == 1:
-            url = f"http://{random.randint(10,250)}.{random.randint(10,250)}.{random.randint(10,250)}.{random.randint(10,250)}/{brand}/signin"
-        elif style == 2:
-            url = f"http://{brand}.{token}-session-{random.randint(1000,9999)}.{tld}/verify?user={random.randint(10000,99999)}"
-        elif style == 3:
-            url = f"https://bit.ly/{brand}{random.randint(100,999)}"
-        else:
-            url = f"http://www.{brand}.com@{token}-{random.randint(100,999)}.{tld}/password-update"
-        rows.append(extract_features(url, False)); labels.append(1)
-    df = pd.DataFrame(rows)[FEATURE_ORDER]
-    df["label"] = labels
-    return df.sample(frac=1, random_state=42).reset_index(drop=True)
+URL_COLUMN_ALIASES = ["url", "urls", "link", "links", "website", "domain", "webpage"]
+LABEL_COLUMN_ALIASES = ["label", "labels", "status", "class", "result", "type", "category", "target"]
+PHISHING_TOKENS = {"1", "1.0", "bad", "phishing", "phish", "malicious", "malware", "defacement", "spam", "unsafe", "fraud", "fake", "true", "yes"}
+SAFE_TOKENS = {"0", "0.0", "good", "benign", "legit", "legitimate", "safe", "clean", "normal", "false", "no"}
 
-def build_models():
+
+def _pick_column(columns, aliases):
+    lower_map = {c.lower().strip(): c for c in columns}
+    for alias in aliases:
+        if alias in lower_map:
+            return lower_map[alias]
+    return None
+
+
+def normalize_dataset(df, invert_labels=False):
+    url_col = _pick_column(df.columns, URL_COLUMN_ALIASES)
+    label_col = _pick_column(df.columns, LABEL_COLUMN_ALIASES)
+    if url_col is None or label_col is None:
+        raise ValueError(f"columns found: {list(df.columns)}")
+
+    work = df[[url_col, label_col]].copy()
+    work.columns = ["url", "label"]
+    work["url"] = work["url"].astype(str).str.strip()
+
+    def map_label(v):
+        s = str(v).strip().lower()
+        if s in PHISHING_TOKENS:
+            return 1
+        if s in SAFE_TOKENS:
+            return 0
+        return 1 if s else np.nan
+
+    work["label"] = work["label"].apply(map_label)
+    work = work.dropna(subset=["url", "label"])
+    work["label"] = work["label"].astype(int)
+    if invert_labels:
+        work["label"] = 1 - work["label"]
+    return work.drop_duplicates(subset=["url"]).reset_index(drop=True)
+
+
+def resolve_dataset_path(path=None):
+    if path:
+        return Path(path)
+    preferred = DATA_DIR / DEFAULT_DATASET_NAME
+    if preferred.exists():
+        return preferred
+    csv_files = sorted(DATA_DIR.glob("*.csv"))
+    if not csv_files:
+        raise FileNotFoundError("No CSV found in data/. Place your dataset there or pass --csv.")
+    return max(csv_files, key=lambda f: f.stat().st_size)
+
+
+def load_csv_dataset(csv_path, invert_labels=False):
+    df = pd.read_csv(csv_path)
+    return normalize_dataset(df, invert_labels=invert_labels)
+
+
+def build_models(scale_pos_weight=1.0):
     return {
-        "Decision Tree": DecisionTreeClassifier(max_depth=6, random_state=42),
-        "Random Tree": ExtraTreeClassifier(max_depth=8, random_state=42),
+        "Decision Tree": DecisionTreeClassifier(max_depth=8, random_state=42, class_weight="balanced"),
+        "Random Tree": ExtraTreeClassifier(max_depth=10, random_state=42, class_weight="balanced"),
         "Logistic Regression": Pipeline([("scaler", StandardScaler()), ("model", LogisticRegression(max_iter=1000, class_weight="balanced"))]),
-        "Random Forest": RandomForestClassifier(n_estimators=250, max_depth=10, random_state=42, class_weight="balanced"),
-        "XGBoost": XGBClassifier(n_estimators=180, max_depth=4, learning_rate=0.06, subsample=0.9, colsample_bytree=0.9, eval_metric="logloss", random_state=42),
+        "Random Forest": RandomForestClassifier(n_estimators=400, max_depth=16, random_state=42, class_weight="balanced", n_jobs=-1),
+        "XGBoost": XGBClassifier(n_estimators=350, max_depth=6, learning_rate=0.05, subsample=0.9, colsample_bytree=0.9, eval_metric="logloss", random_state=42, scale_pos_weight=scale_pos_weight, n_jobs=-1),
     }
 
-def train(csv_path=None):
-    if csv_path:
-        df = pd.read_csv(csv_path)
-        if "url" in df.columns and "label" in df.columns:
-            features = [extract_features(u, False) for u in df["url"].astype(str)]
-            X = pd.DataFrame(features)[FEATURE_ORDER]
-            y = df["label"].astype(int)
-        else:
-            X = df[FEATURE_ORDER]
-            y = df["label"].astype(int)
-    else:
-        df = synthesize()
-        X = df[FEATURE_ORDER]
-        y = df["label"]
+
+def _urls_to_features(urls, live_checks=False):
+    rows, keep = [], []
+    for i, u in enumerate(urls):
+        try:
+            rows.append(extract_features(u, live_checks))
+            keep.append(i)
+        except Exception:
+            continue
+    return pd.DataFrame(rows)[FEATURE_ORDER], keep
+
+
+def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=False, progress_callback=None):
+    path = resolve_dataset_path(csv_path)
+    if progress_callback:
+        progress_callback(f"Loading {path}...")
+    norm = load_csv_dataset(path, invert_labels=invert_labels)
+    if sample_size and len(norm) > sample_size:
+        norm = norm.groupby("label", group_keys=False).apply(lambda g: g.sample(min(len(g), sample_size // 2), random_state=42)).reset_index(drop=True)
+    if progress_callback:
+        progress_callback(f"Extracting features for {len(norm)} URLs...")
+    X, keep = _urls_to_features(norm["url"], live_checks)
+    y = norm["label"].astype(int).iloc[keep].reset_index(drop=True)
+    dataset_info = {"source": "csv", "name": path.name, "rows": int(len(norm)), "phishing": int((y == 1).sum()), "safe": int((y == 0).sum())}
+
+    if progress_callback:
+        progress_callback("Splitting train/test and fitting models...")
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.22, random_state=42, stratify=y)
-    models = build_models()
-    fitted = []
-    metrics = []
+    scale_pos_weight = float((y_train == 0).sum()) / max(1, int((y_train == 1).sum()))
+    models = build_models(scale_pos_weight=scale_pos_weight)
+    fitted, metrics = [], []
     for name, model in models.items():
         model.fit(X_train, y_train)
         pred = model.predict(X_test)
         prob = model.predict_proba(X_test)[:, 1]
         metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1_score(y_test, pred), "roc_auc": roc_auc_score(y_test, prob)})
         fitted.append((name.lower().replace(" ", "_"), model))
+
+    if progress_callback:
+        progress_callback("Fitting voting ensemble...")
+
     ensemble = VotingClassifier(estimators=fitted, voting="soft")
     ensemble.fit(X_train, y_train)
-    joblib.dump({"model": ensemble, "features": FEATURE_ORDER, "metrics": pd.DataFrame(metrics)}, OUT / "urlscope_model.joblib")
+
+    ens_pred = ensemble.predict(X_test)
+    ens_prob = ensemble.predict_proba(X_test)[:, 1]
+    metrics.append({
+        "model": "Voting Ensemble (deployed)",
+        "accuracy": accuracy_score(y_test, ens_pred),
+        "precision": precision_score(y_test, ens_pred),
+        "recall": recall_score(y_test, ens_pred),
+        "f1": f1_score(y_test, ens_pred),
+        "roc_auc": roc_auc_score(y_test, ens_prob),
+    })
+
+    joblib.dump({"model": ensemble, "features": FEATURE_ORDER, "metrics": pd.DataFrame(metrics), "dataset_info": dataset_info}, OUT / "urlscope_model.joblib")
     pd.DataFrame(metrics).to_csv(OUT / "metrics.csv", index=False)
-    return pd.DataFrame(metrics)
+    with open(OUT / "dataset_info.json", "w") as f:
+        json.dump(dataset_info, f, indent=2)
+
+    return pd.DataFrame(metrics), dataset_info
+
 
 if __name__ == "__main__":
-    print(train().round(4))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv", type=str, default=None)
+    parser.add_argument("--invert-labels", action="store_true")
+    parser.add_argument("--sample-size", type=int, default=None)
+    parser.add_argument("--live-checks", action="store_true")
+    args = parser.parse_args()
+
+    metrics_df, info = train(csv_path=args.csv, sample_size=args.sample_size, invert_labels=args.invert_labels, live_checks=args.live_checks, progress_callback=print)
+    print(info)
+    print(metrics_df.round(4))
