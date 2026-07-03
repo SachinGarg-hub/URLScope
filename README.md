@@ -133,15 +133,14 @@ The system extracts three categories of features:
 urlscope/
 │
 ├── app.py
-├── predictor.py
+├── features.py
 ├── train_model.py
-├── feature_extractor.py
+├── index.html
+├── style.css
 ├── requirements.txt
 ├── models/
 ├── data/
 │   └── final_dataset_with_all_features_v3.1.csv
-├── templates/
-│   └── index.html
 └── README.md
 ```
 

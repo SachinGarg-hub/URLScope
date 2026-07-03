@@ -107,7 +107,11 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
         progress_callback(f"Loading {path}...")
     norm = load_csv_dataset(path, invert_labels=invert_labels)
     if sample_size and len(norm) > sample_size:
-        norm = norm.groupby("label", group_keys=False).apply(lambda g: g.sample(min(len(g), sample_size // 2), random_state=42)).reset_index(drop=True)
+        norm = (
+            norm.groupby("label", group_keys=False)
+            .apply(lambda g: g.sample(min(len(g), sample_size // 2), random_state=42))
+            .reset_index(drop=True)
+        )
     if progress_callback:
         progress_callback(f"Extracting features for {len(norm)} URLs...")
     X, keep = _urls_to_features(norm["url"], live_checks)
@@ -122,16 +126,21 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
     models = build_models(scale_pos_weight=scale_pos_weight)
     fitted, metrics = [], []
     for name, model in models.items():
-        model.fit(X_train, y_train)
-        pred = model.predict(X_test)
-        prob = model.predict_proba(X_test)[:, 1]
-        metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1_score(y_test, pred), "roc_auc": roc_auc_score(y_test, prob)})
-        fitted.append((name.lower().replace(" ", "_"), model))
+        try:
+            model.fit(X_train, y_train)
+            pred = model.predict(X_test)
+            prob = model.predict_proba(X_test)[:, 1]
+            metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1_score(y_test, pred), "roc_auc": roc_auc_score(y_test, prob)})
+            fitted.append((name.lower().replace(" ", "_"), model))
+        except Exception as exc:
+            if progress_callback:
+                progress_callback(f"Skipping {name}: {exc}")
 
     if progress_callback:
         progress_callback("Fitting voting ensemble...")
 
-    ensemble = VotingClassifier(estimators=fitted, voting="soft")
+    f1_weights = [m["f1"] for m in metrics]
+    ensemble = VotingClassifier(estimators=fitted, voting="soft", weights=f1_weights)
     ensemble.fit(X_train, y_train)
 
     ens_pred = ensemble.predict(X_test)

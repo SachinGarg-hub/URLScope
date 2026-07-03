@@ -3,6 +3,7 @@ import socket
 import ssl
 import math
 import urllib.parse
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 
@@ -22,8 +23,8 @@ FEATURE_ORDER = [
 def _entropy(text: str) -> float:
     if not text:
         return 0.0
-    probs = [text.count(c) / len(text) for c in set(text)]
-    return -sum(p * math.log2(p) for p in probs)
+    n = len(text)
+    return -sum((c / n) * math.log2(c / n) for c in Counter(text).values())
 
 def _normalize_url(url: str) -> str:
     url = (url or "").strip()
@@ -42,6 +43,11 @@ def _is_ip(hostname: str) -> int:
     if not hostname:
         return 0
     return int(bool(re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", hostname)))
+
+
+def _count_keywords(text: str, keywords: set) -> int:
+    """Count keyword matches using word-boundary regex to avoid substring false positives."""
+    return sum(bool(re.search(rf"\b{re.escape(kw)}\b", text)) for kw in keywords)
 
 def safe_domain_age_days(hostname: str) -> int:
     try:
@@ -105,13 +111,13 @@ def extract_features(url: str, enable_live_checks: bool = False) -> Dict[str, fl
         "has_https": int(parsed.scheme == "https"),
         "has_suspicious_tld": int(tld in SUSPICIOUS_TLDS),
         "is_shortened": int(domain in SHORTENERS),
-        "brand_keyword_count": sum(kw in full_text for kw in BRAND_KEYWORDS),
-        "risk_word_count": sum(kw in full_text for kw in RISK_WORDS),
+        "brand_keyword_count": _count_keywords(full_text, BRAND_KEYWORDS),
+        "risk_word_count": _count_keywords(full_text, RISK_WORDS),
         "subdomain_count": max(0, len(hostname.split(".")) - 2) if hostname else 0,
         "query_param_count": len(urllib.parse.parse_qs(parsed.query)),
         "entropy": round(_entropy(url), 3),
         "domain_age_days": -1,
-        "ssl_valid": int(parsed.scheme == "https"),
+        "ssl_valid": 0,   # default unknown; only set to 1 by live SSL check
         "reachable": 0,
         "has_forms": 0,
         "external_link_ratio": 0.0,
