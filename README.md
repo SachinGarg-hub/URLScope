@@ -1,52 +1,3 @@
-<<<<<<< HEAD
-# URLSCOPE — Intelligent Phishing URL Detection Platform
-
-This project keeps the provided `index.html` design unchanged and adds a Python/Streamlit backend for phishing URL detection.
-
-## Tech stack
-Python, Pandas, Scikit-Learn, XGBoost, SHAP, Streamlit
-
-## Algorithms included
-- Decision Tree
-- Random Tree using `ExtraTreeClassifier`
-- Logistic Regression
-- Random Forest ensemble member
-- XGBoost
-- Soft-voting ensemble over all models
-
-## Features analyzed
-Lexical URL signals, domain signals, and optional behavioral/live checks:
-URL length, hostname length, path length, dots, hyphens, digits, special characters, IP host, `@` trick, HTTPS, suspicious TLD, shortener domain, brand/risk keywords, subdomain count, query params, entropy, domain age, SSL validity, page reachability, forms, and external-link ratio.
-
-## Run
-```bash
-cd urlscope_platform
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-source .venv/bin/activate
-pip install -r requirements.txt
-python train_model.py
-streamlit run app.py
-```
-
-## Optional real dataset
-`train_model.py` can train from a CSV with either:
-
-1. `url,label` columns, where label is `1` for phishing and `0` for safe.
-2. Precomputed feature columns matching `features.FEATURE_ORDER` plus `label`.
-
-Example:
-```bash
-python -c "from train_model import train; print(train('your_dataset.csv'))"
-```
-
-## Files
-- `index.html` — original UI provided by you, preserved.
-- `features.py` — lexical, domain, SSL, WHOIS, and behavioral feature extraction.
-- `train_model.py` — model training and metrics.
-- `app.py` — Streamlit app that renders the provided HTML UI dynamically.
-- `requirements.txt` — dependencies.
-=======
 # URLScope — Intelligent Phishing URL Detection Platform
 
 ## Overview
@@ -80,6 +31,7 @@ Traditional blacklists often fail to detect newly created phishing domains. This
 * SHAP-based model explainability
 * Interactive web interface
 * Multiple ML model comparison
+* Performance-weighted voting ensemble (weak models contribute less automatically)
 
 ---
 
@@ -95,25 +47,53 @@ Traditional blacklists often fail to detect newly created phishing domains. This
 
 ---
 
+## Dataset
+
+The models are trained on the **[Malicious URL Detection Dataset (Enhanced 2026)](https://www.kaggle.com/datasets/moutasmtamimi/malicious-url-detection-dataset-enhanced-2026)** from Kaggle.
+
+* **~640,000 URLs** (`final_dataset_with_all_features_v3.1.csv`)
+* Class distribution: **~67% safe / ~33% phishing** (moderately imbalanced)
+* Includes both raw URLs and precomputed feature columns (character frequencies, subdomain stats, etc.), some of which are candidates for future integration into live feature extraction
+
+---
+
 ## Machine Learning Algorithms
 
 The following algorithms are implemented and compared:
 
 ### 1. Decision Tree
 
-A supervised learning model that makes predictions using tree-based rules.
+A supervised learning model that makes predictions using tree-based rules. Trained with `class_weight="balanced"` to counter class imbalance.
 
-### 2. Random Forest
+### 2. Random Tree (`ExtraTreeClassifier`)
 
-An ensemble of multiple decision trees that improves prediction accuracy and reduces overfitting.
+An extremely randomized tree variant used as an additional, faster-training ensemble member.
 
 ### 3. Logistic Regression
 
 A statistical classification model that predicts phishing probability.
 
-### 4. XGBoost
+### 4. Random Forest
 
-A high-performance gradient boosting model used for advanced classification.
+An ensemble of multiple decision trees that improves prediction accuracy and reduces overfitting. Scaled up to **400 trees, max depth 16** (from 250/10) to take advantage of the larger dataset, with `n_jobs=-1` for faster training.
+
+### 5. XGBoost
+
+A high-performance gradient boosting model. Scaled up to **350 trees, max depth 6** (from 180/4), with `scale_pos_weight` computed automatically from the train-split class ratio to counter imbalance, and `n_jobs=-1` for faster training.
+
+### 6. Voting Ensemble (deployed)
+
+A soft-voting ensemble over all five models above, now **weighted by each model's own validation F1 score** (computed automatically, no manual tuning required) so weaker learners no longer drag down stronger ones. This is the model actually saved and used by the app.
+
+---
+
+## Handling Class Imbalance
+
+Since the dataset is ~67% safe / ~33% phishing, plain accuracy can be misleading — a model that always predicts "safe" would still score ~67% accuracy while catching zero phishing URLs. To address this:
+
+* `class_weight="balanced"` is applied to Decision Tree and Random Tree
+* `scale_pos_weight` is applied to XGBoost, computed automatically from the actual train-split ratio
+* Model comparison is judged primarily on **F1 and ROC-AUC**, not raw accuracy
 
 ---
 
@@ -159,6 +139,7 @@ urlscope/
 ├── requirements.txt
 ├── models/
 ├── data/
+│   └── final_dataset_with_all_features_v3.1.csv
 ├── templates/
 │   └── index.html
 └── README.md
@@ -207,7 +188,7 @@ Run:
 python train_model.py
 ```
 
-This will train all machine learning models and save them inside the `models/` folder.
+This will train all machine learning models — including the weighted Voting Ensemble — and save them inside the `models/` folder. The printed metrics table now includes a **`Voting Ensemble (deployed)`** row, which is the actual model used by the app, so results can be judged correctly instead of only looking at individual base learners.
 
 ---
 
@@ -219,12 +200,6 @@ Start the application using Streamlit:
 streamlit run app.py
 ```
 
-Open browser:
-
-```bash
-
-```
-
 ---
 
 ## Workflow
@@ -232,7 +207,7 @@ Open browser:
 1. User enters URL
 2. Feature extractor processes URL
 3. ML models evaluate phishing probability
-4. Best model predicts classification
+4. Weighted Voting Ensemble produces the final classification
 5. SHAP explains feature importance
 6. Risk verdict is displayed
 
@@ -268,16 +243,26 @@ Models are evaluated using:
 * F1 Score
 * ROC-AUC
 
-Expected performance:
+Latest results on the 640k-row Kaggle dataset (67% safe / 33% phishing):
 
-* Accuracy: ~95%
-* Precision: High
-* False Positive Rate: Low
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC |
+|---|---|---|---|---|---|
+| Decision Tree | 0.7120 | 0.5433 | 0.8363 | 0.6587 | 0.8461 |
+| Random Tree | 0.6695 | 0.5043 | 0.2995 | 0.3758 | 0.6156 |
+| Logistic Regression | 0.7235 | 0.5779 | 0.6226 | 0.5994 | 0.7784 |
+| Random Forest | 0.8476 | 0.7577 | 0.7959 | 0.7763 | 0.9256 |
+| XGBoost | 0.8322 | 0.7223 | 0.8042 | 0.7611 | 0.9167 |
+| **Voting Ensemble (deployed)** | 0.8359 | 0.7536 | 0.7522 | 0.7529 | 0.9065 |
+
+Because raw accuracy is misleading under class imbalance, **F1 and ROC-AUC are the primary metrics** used to compare models. Recall improvements (e.g. XGBoost's recall rising after applying `scale_pos_weight`) directly translate to catching more real phishing URLs, even when they come at a small accuracy cost.
+
+> Note: individual Random Forest currently edges out the unweighted ensemble on some runs, since a plain soft-voting average lets weaker base learners (Decision Tree, Random Tree) drag down stronger ones. The F1-weighted voting scheme addresses this by giving each model influence proportional to its own validation performance.
 
 ---
 
 ## Future Scope
 
+* Integrate the ~40+ precomputed Kaggle feature columns (character frequencies, subdomain stats, etc.) that are derivable directly from the URL string, so the live sidebar scanner can compute them for brand-new URLs
 * Browser extension support
 * Real-time threat intelligence API
 * Deep learning models
@@ -299,7 +284,7 @@ Expected performance:
 
 ## Conclusion
 
-URLScope provides a reliable and explainable solution for phishing detection using machine learning. By combining multiple features and explainable AI, the platform helps users identify malicious websites before becoming victims of cyber attacks.
+URLScope provides a reliable and explainable solution for phishing detection using machine learning. By combining multiple features, class-imbalance-aware training, a performance-weighted ensemble, and explainable AI, the platform helps users identify malicious websites before becoming victims of cyber attacks.
 
 ---
 
@@ -309,11 +294,10 @@ URLScope provides a reliable and explainable solution for phishing detection usi
 * Goutam
 * Navdeep
 * Arsh kambooj
-* Arnavdeep 
+* Arnavdeep
 
 ---
 
 ## License
 
 This project is licensed under the MIT License.
->>>>>>> d74aa45084844600ca8b54fa3318f5d53ad8b5de

@@ -1,9 +1,11 @@
 import re
 from pathlib import Path
+
 import joblib
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
 from features import FEATURE_ORDER, feature_frame
 from train_model import train
 
@@ -12,11 +14,13 @@ HTML_PATH = Path("index.html")
 
 st.set_page_config(page_title="URLSCOPE", page_icon="🛡️", layout="centered")
 
+
 @st.cache_resource
 def load_model():
     if not MODEL_PATH.exists():
         train()
     return joblib.load(MODEL_PATH)
+
 
 def explain_with_shap(model, X):
     try:
@@ -34,6 +38,7 @@ def explain_with_shap(model, X):
         pass
     return pd.Series(index=FEATURE_ORDER, data=0.0)
 
+
 def heuristic_reasons(feats, shap_values):
     labels = {
         "has_suspicious_tld": "Suspicious top-level domain", "brand_keyword_count": "Brand/risk keyword present",
@@ -46,20 +51,35 @@ def heuristic_reasons(feats, shap_values):
     rows = []
     for f in FEATURE_ORDER:
         v = feats[f]
-        bad = (f in ["has_suspicious_tld","has_ip","has_at","is_shortened","has_forms"] and v) or (f=="ssl_valid" and not v) or (f=="url_length" and v>65) or (f=="num_hyphens" and v>=2) or (f=="brand_keyword_count" and v>0) or (f=="domain_age_days" and (v == -1 or 0 <= v < 30)) or (f=="external_link_ratio" and v>0.7)
-        ok = (f in ["has_ip","has_at","has_suspicious_tld","is_shortened"] and not v) or (f=="has_https" and v)
+        bad = (f in ["has_suspicious_tld", "has_ip", "has_at", "is_shortened", "has_forms"] and v) or (f == "ssl_valid" and not v) or (f == "url_length" and v > 65) or (f == "num_hyphens" and v >= 2) or (f == "brand_keyword_count" and v > 0) or (f == "domain_age_days" and (v == -1 or 0 <= v < 30)) or (f == "external_link_ratio" and v > 0.7)
+        ok = (f in ["has_ip", "has_at", "has_suspicious_tld", "is_shortened"] and not v) or (f == "has_https" and v)
         if bad or ok:
             rows.append(("bad" if bad else "ok", labels.get(f, f.replace("_", " ").title()), str(v), float(shap_values.get(f, 0.0))))
     rows = sorted(rows, key=lambda r: abs(r[3]), reverse=True)[:8]
     return rows
 
-def render_html(url, verdict, risk, reasons, model_name="Voting ensemble"):
+
+def dataset_badge_text(dataset_info):
+    if not dataset_info:
+        return "Trained on synthetic data"
+    source = dataset_info.get("source", "synthetic")
+    rows = dataset_info.get("rows")
+    name = dataset_info.get("name", "")
+    if source == "kaggle":
+        short_name = name.split("/")[-1]
+        return f"Trained on Kaggle: {short_name} ({rows:,} URLs)" if rows else f"Trained on Kaggle: {short_name}"
+    if source.startswith("csv"):
+        return f"Trained on {name} ({rows:,} URLs)" if rows else f"Trained on {name}"
+    return f"Trained on synthetic data ({rows:,} URLs)" if rows else "Trained on synthetic data"
+
+
+def render_html(url, verdict, risk, reasons, model_name="Voting ensemble", dataset_info=None):
     html = HTML_PATH.read_text(encoding="utf-8")
     result_title = "Flagged — likely phishing" if verdict else "Clear — likely legitimate"
     stamp = "FLAGGED<br>PHISHING" if verdict else "LIKELY<br>SAFE"
     color = "var(--red)" if verdict else "var(--teal)"
     triggered = sum(1 for r in reasons if r[0] == "bad")
-    rows = "\n".join([f'''<div class="ev-row"><div class="ev-flag {flag}"></div><div class="ev-name">{name}</div><div class="ev-detail">{detail}</div><div class="ev-weight">{weight:+.2f}</div></div>''' for flag,name,detail,weight in reasons])
+    rows = "\n".join([f'''<div class="ev-row"><div class="ev-flag {flag}"></div><div class="ev-name">{name}</div><div class="ev-detail">{detail}</div><div class="ev-weight">{weight:+.2f}</div></div>''' for flag, name, detail, weight in reasons])
     html = re.sub(r'<input type="text"[^>]*>', f'<input type="text" placeholder="https://secure-paypal-verify-account.tk/login" value="{url}">', html)
     html = re.sub(r'<p class="verdict-url">.*?</p>', f'<p class="verdict-url">{url}</p>', html)
     html = re.sub(r'<p class="verdict-title">.*?</p>', f'<p class="verdict-title" style="color:{color}">{result_title}</p>', html)
@@ -69,24 +89,83 @@ def render_html(url, verdict, risk, reasons, model_name="Voting ensemble"):
     html = re.sub(r'<div class="meter-track"><div class="meter-fill"></div></div>', f'<div class="meter-track"><div class="meter-fill" style="width:{risk*100:.1f}%"></div></div>', html)
     html = re.sub(r'<div class="evidence-head"><span class="label">Feature breakdown</span></div>.*?</div>\s*<div class="model-footer">', f'<div class="evidence-head"><span class="label">Feature breakdown</span></div>{rows}</div><div class="model-footer">', html, flags=re.S)
     html = re.sub(r'<div class="pill"><div class="sw"></div>.*?</div>', f'<div class="pill"><div class="sw"></div>{model_name}</div>', html, count=1)
+    # Add a dataset-provenance pill right after the model-name pill so the UI
+    # always shows what data actually trained the currently-loaded model.
+    badge = dataset_badge_text(dataset_info)
+    html = re.sub(
+        r'(<div class="model-footer">\s*<div class="pill"><div class="sw"></div>.*?</div>)',
+        rf'\1<div class="pill">{badge}</div>',
+        html,
+        count=1,
+        flags=re.S,
+    )
     return html
 
+
+# ---------------------------------------------------------------------------
+# Sidebar — scan controls
+# ---------------------------------------------------------------------------
 bundle = load_model()
 model = bundle["model"]
+dataset_info = bundle.get("dataset_info")
+
 st.sidebar.title("URLSCOPE Controls")
 url = st.sidebar.text_input("URL to scan", "https://secure-paypal-verify-account.tk/login")
 live = st.sidebar.checkbox("Enable live domain / SSL / page checks", value=False)
 show_table = st.sidebar.checkbox("Show raw feature table", value=False)
 
+# ---------------------------------------------------------------------------
+# Sidebar — dataset / retraining controls
+# ---------------------------------------------------------------------------
+st.sidebar.divider()
+st.sidebar.title("Training data")
+st.sidebar.caption(dataset_badge_text(dataset_info))
+
+with st.sidebar.expander("Retrain from data/ CSV"):
+    st.caption("Place your Kaggle CSV in the data/ folder, then retrain.")
+    sample_size = st.number_input("Max rows to train on (0 = use all)", min_value=0, value=20000, step=1000)
+    invert_labels = st.checkbox("Flip label polarity (use if results look backwards)", value=False)
+    if st.button("Retrain from data/ CSV", type="primary"):
+        status = st.empty()
+        try:
+            train(sample_size=sample_size or None, invert_labels=invert_labels, progress_callback=lambda msg: status.info(msg))
+            st.cache_resource.clear()
+            st.success("Retrained successfully. Reloading model...")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Training failed: {e}")
+
+with st.sidebar.expander("Retrain with your own CSV"):
+    uploaded = st.file_uploader("CSV with a url column and a label column", type=["csv"])
+    invert_labels_csv = st.checkbox("Flip label polarity", value=False, key="invert_csv")
+    if uploaded is not None and st.button("Retrain from uploaded CSV"):
+        tmp_path = Path("data") / uploaded.name
+        tmp_path.parent.mkdir(exist_ok=True)
+        tmp_path.write_bytes(uploaded.getvalue())
+        status = st.empty()
+        try:
+            train(csv_path=str(tmp_path), invert_labels=invert_labels_csv, progress_callback=lambda msg: status.info(msg))
+            st.cache_resource.clear()
+            st.success("Retrained successfully. Reloading model...")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Training failed: {e}")
+
+# ---------------------------------------------------------------------------
+# Main scan panel
+# ---------------------------------------------------------------------------
 X, feats = feature_frame(url, live)
 risk = float(model.predict_proba(X)[0, 1])
 verdict = risk >= 0.50
 shap_values = explain_with_shap(model, X)
 reasons = heuristic_reasons(feats, shap_values)
-components.html(render_html(url, verdict, risk, reasons), height=1180, scrolling=True)
+components.html(render_html(url, verdict, risk, reasons, dataset_info=dataset_info), height=1180, scrolling=True)
 
 if show_table:
     st.subheader("Extracted features")
     st.dataframe(X.T.rename(columns={0: "value"}))
     st.subheader("Training metrics")
     st.dataframe(bundle["metrics"].round(4))
+    if dataset_info:
+        st.subheader("Dataset info")
+        st.json(dataset_info)
