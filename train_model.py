@@ -163,7 +163,7 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
         "roc_auc": roc_auc_score(y_test, ens_prob),
     })
 
-    joblib.dump({"model": ensemble, "features": FEATURE_ORDER, "metrics": pd.DataFrame(metrics), "dataset_info": dataset_info}, OUT / "urlscope_model.joblib")
+    joblib.dump({"model": ensemble, "features": FEATURE_ORDER, "metrics": pd.DataFrame(metrics), "dataset_info": dataset_info}, OUT / "urlscope_model.joblib", compress=9)
     pd.DataFrame(metrics).to_csv(OUT / "metrics.csv", index=False)
     with open(OUT / "dataset_info.json", "w") as f:
         json.dump(dataset_info, f, indent=2)
