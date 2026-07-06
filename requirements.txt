@@ -8,3 +8,5 @@ python-whois>=0.8.0
 requests>=2.31
 beautifulsoup4>=4.12
 joblib>=1.3
+validators>=0.22
+jinja2>=3.0

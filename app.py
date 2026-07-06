@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from utils import validateUrl
 from features import FEATURE_ORDER, feature_frame
 from train_model import train
 
@@ -97,11 +98,15 @@ def dataset_badge_text(dataset_info):
 
 
 def render_html(url, verdict, risk, reasons, model_name="Voting ensemble", dataset_info=None):
+    import jinja2
     html = HTML_PATH.read_text(encoding="utf-8")
+    template = jinja2.Template(html)
+    
     result_title = "Flagged — likely phishing" if verdict else "Clear — likely legitimate"
     stamp = "FLAGGED<br>PHISHING" if verdict else "LIKELY<br>SAFE"
     color = "var(--red)" if verdict else "var(--teal)"
     triggered = sum(1 for r in reasons if r[0] == "bad")
+    
     rows = "\n".join([f'''<div class="ev-row"><div class="ev-flag {flag}"></div><div class="ev-name">{name}</div><div class="ev-detail">{detail}</div><div class="ev-weight">{weight:+.2f}</div></div>''' for flag, name, detail, weight in reasons])
     safe_url = html_lib.escape(url, quote=True)
     html = re.sub(r'<input type="text"[^>]*>', f'<input type="text" placeholder="https://secure-paypal-verify-account.tk/login" value="{safe_url}">', html)
@@ -116,14 +121,19 @@ def render_html(url, verdict, risk, reasons, model_name="Voting ensemble", datas
     # Add a dataset-provenance pill right after the model-name pill so the UI
     # always shows what data actually trained the currently-loaded model.
     badge = dataset_badge_text(dataset_info)
-    html = re.sub(
-        r'(<div class="model-footer">\s*<div class="pill"><div class="sw"></div>.*?</div>)',
-        rf'\1<div class="pill">{badge}</div>',
-        html,
-        count=1,
-        flags=re.S,
+    
+    return template.render(
+        url=url,
+        result_title=result_title,
+        stamp=stamp,
+        color=color,
+        triggered=triggered,
+        risk_pct=f"{risk:.0%}",
+        risk_width=f"{risk*100:.1f}",
+        reasons=reasons,
+        model_name=model_name,
+        badge=badge
     )
-    return html
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +190,12 @@ with st.sidebar.expander("Retrain with your own CSV"):
 # ---------------------------------------------------------------------------
 # Main scan panel
 # ---------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def get_cached_features(url_to_check, enable_live):
+    return feature_frame(url_to_check, enable_live)
+
+X, feats = get_cached_features(url, live)
+risk = float(model.predict_proba(X)[0, 1])
 if not url.strip():
     st.warning("Enter a URL to scan.")
     st.stop()
