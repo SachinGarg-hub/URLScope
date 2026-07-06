@@ -397,7 +397,7 @@
 
     <div class="terminal">
       <span class="terminal-prompt">scan&gt;</span>
-      <input type="text" placeholder="https://secure-paypal-verify-account.tk/login" value="https://secure-paypal-verify-account.tk/login">
+      <input type="text" placeholder="https://secure-paypal-verify-account.tk/login" value="{{ url | e }}">
       <button>Run scan</button>
     </div>
     <div class="hero-hints">
@@ -411,80 +411,40 @@
 
   <div class="verdict-row">
     <div class="verdict-info">
-      <p class="verdict-url">secure-paypal-verify-account.tk/login</p>
-      <p class="verdict-title">Flagged — likely phishing</p>
-      <p class="verdict-sub">7 of 9 risk signals triggered</p>
+      <p class="verdict-url">{{ url | e }}</p>
+      <p class="verdict-title" style="color:{{ color }}">{{ result_title }}</p>
+      <p class="verdict-sub">{{ triggered }} risk signals triggered</p>
     </div>
-    <div class="stamp">
-      <div class="stamp-text">FLAGGED<br>PHISHING</div>
+    <div class="stamp" style="border-color:{{ color }}">
+      <div class="stamp-text" style="color:{{ color }}">{{ stamp | safe }}</div>
     </div>
   </div>
 
   <div class="meter-card">
     <div class="meter-head">
       <span class="label">Risk confidence</span>
-      <span class="value">87%</span>
+      <span class="value" style="color:{{ color }}">{{ risk_pct }}</span>
     </div>
-    <div class="meter-track"><div class="meter-fill"></div></div>
+    <div class="meter-track"><div class="meter-fill" style="width:{{ risk_width }}%"></div></div>
     <div class="meter-scale"><span>0 — safe</span><span>50 — suspicious</span><span>100 — malicious</span></div>
   </div>
 
   <div class="evidence-card">
     <div class="evidence-head"><span class="label">Feature breakdown</span></div>
-
+    {% for flag, name, detail, weight in reasons %}
     <div class="ev-row">
-      <div class="ev-flag bad"></div>
-      <div class="ev-name">Suspicious top-level domain</div>
-      <div class="ev-detail">.tk</div>
-      <div class="ev-weight">+0.22</div>
+      <div class="ev-flag {{ flag }}"></div>
+      <div class="ev-name">{{ name }}</div>
+      <div class="ev-detail">{{ detail }}</div>
+      <div class="ev-weight">{{ "%+0.2f"|format(weight) }}</div>
     </div>
-    <div class="ev-row">
-      <div class="ev-flag bad"></div>
-      <div class="ev-name">Brand keyword in subdomain</div>
-      <div class="ev-detail">"paypal"</div>
-      <div class="ev-weight">+0.19</div>
-    </div>
-    <div class="ev-row">
-      <div class="ev-flag bad"></div>
-      <div class="ev-name">Domain age</div>
-      <div class="ev-detail">11 days</div>
-      <div class="ev-weight">+0.17</div>
-    </div>
-    <div class="ev-row">
-      <div class="ev-flag warn"></div>
-      <div class="ev-name">No valid SSL certificate</div>
-      <div class="ev-detail">self-signed</div>
-      <div class="ev-weight">+0.14</div>
-    </div>
-    <div class="ev-row">
-      <div class="ev-flag warn"></div>
-      <div class="ev-name">Excessive URL length</div>
-      <div class="ev-detail">68 chars</div>
-      <div class="ev-weight">+0.09</div>
-    </div>
-    <div class="ev-row">
-      <div class="ev-flag warn"></div>
-      <div class="ev-name">Hyphen count in domain</div>
-      <div class="ev-detail">3 hyphens</div>
-      <div class="ev-weight">+0.06</div>
-    </div>
-    <div class="ev-row">
-      <div class="ev-flag ok"></div>
-      <div class="ev-name">No IP address in host</div>
-      <div class="ev-detail">passes</div>
-      <div class="ev-weight">−0.04</div>
-    </div>
-    <div class="ev-row">
-      <div class="ev-flag ok"></div>
-      <div class="ev-name">No @ symbol redirect trick</div>
-      <div class="ev-detail">passes</div>
-      <div class="ev-weight">−0.02</div>
-    </div>
+    {% endfor %}
   </div>
 
   <div class="model-footer">
-    <div class="pill"><div class="sw"></div>RandomForestClassifier</div>
-    <div class="pill">scanned in 312ms</div>
+    <div class="pill"><div class="sw"></div>{{ model_name }}</div>
+    <div class="pill">{{ badge }}</div>
+    
   </div>
 
 </div>

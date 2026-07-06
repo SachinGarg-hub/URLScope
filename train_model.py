@@ -121,17 +121,20 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
     scale_pos_weight = float((y_train == 0).sum()) / max(1, int((y_train == 1).sum()))
     models = build_models(scale_pos_weight=scale_pos_weight)
     fitted, metrics = [], []
+    weights = []
     for name, model in models.items():
         model.fit(X_train, y_train)
         pred = model.predict(X_test)
         prob = model.predict_proba(X_test)[:, 1]
-        metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1_score(y_test, pred), "roc_auc": roc_auc_score(y_test, prob)})
+        f1 = f1_score(y_test, pred)
+        metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1, "roc_auc": roc_auc_score(y_test, prob)})
         fitted.append((name.lower().replace(" ", "_"), model))
+        weights.append(f1)
 
     if progress_callback:
         progress_callback("Fitting voting ensemble...")
 
-    ensemble = VotingClassifier(estimators=fitted, voting="soft")
+    ensemble = VotingClassifier(estimators=fitted, voting="soft", weights=weights)
     ensemble.fit(X_train, y_train)
 
     ens_pred = ensemble.predict(X_test)
