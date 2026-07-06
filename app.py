@@ -1,3 +1,4 @@
+import html as html_lib
 import re
 from pathlib import Path
 
@@ -40,6 +41,19 @@ def explain_with_shap(model, X):
     return pd.Series(index=FEATURE_ORDER, data=0.0)
 
 
+def _is_bad(f, v) -> bool:
+    """Return True when a feature value signals phishing risk."""
+    return (
+        (f in {"has_suspicious_tld", "has_ip", "has_at", "is_shortened", "has_forms"} and v)
+        or (f == "ssl_valid" and not v)
+        or (f == "url_length" and v > 65)
+        or (f == "num_hyphens" and v >= 2)
+        or (f == "brand_keyword_count" and v > 0)
+        or (f == "domain_age_days" and (v == -1 or 0 <= v < 30))
+        or (f == "external_link_ratio" and v > 0.7)
+    )
+
+
 def heuristic_reasons(feats, shap_values):
     labels = {
         "has_suspicious_tld": "Suspicious top-level domain", "brand_keyword_count": "Brand/risk keyword present",
@@ -52,12 +66,21 @@ def heuristic_reasons(feats, shap_values):
     rows = []
     for f in FEATURE_ORDER:
         v = feats[f]
-        bad = (f in ["has_suspicious_tld", "has_ip", "has_at", "is_shortened", "has_forms"] and v) or (f == "ssl_valid" and not v) or (f == "url_length" and v > 65) or (f == "num_hyphens" and v >= 2) or (f == "brand_keyword_count" and v > 0) or (f == "domain_age_days" and (v == -1 or 0 <= v < 30)) or (f == "external_link_ratio" and v > 0.7)
-        ok = (f in ["has_ip", "has_at", "has_suspicious_tld", "is_shortened"] and not v) or (f == "has_https" and v)
+        bad = _is_bad(f, v)
+        ok = (f in {"has_ip", "has_at", "has_suspicious_tld", "is_shortened"} and not v) or (f == "has_https" and v)
         if bad or ok:
             rows.append(("bad" if bad else "ok", labels.get(f, f.replace("_", " ").title()), str(v), float(shap_values.get(f, 0.0))))
     rows = sorted(rows, key=lambda r: abs(r[3]), reverse=True)[:8]
     return rows
+
+
+@st.cache_data(show_spinner=False)
+def scan_url(_model, url: str, live: bool):
+    """Cache scan results so Streamlit widget interactions don't re-run the scan."""
+    X, feats = feature_frame(url, live)
+    risk = float(_model.predict_proba(X)[0, 1])
+    shap_values = explain_with_shap(_model, X)
+    return X, feats, risk, shap_values
 
 
 def dataset_badge_text(dataset_info):
@@ -84,6 +107,19 @@ def render_html(url, verdict, risk, reasons, model_name="Voting ensemble", datas
     color = "var(--red)" if verdict else "var(--teal)"
     triggered = sum(1 for r in reasons if r[0] == "bad")
     
+    rows = "\n".join([f'''<div class="ev-row"><div class="ev-flag {flag}"></div><div class="ev-name">{name}</div><div class="ev-detail">{detail}</div><div class="ev-weight">{weight:+.2f}</div></div>''' for flag, name, detail, weight in reasons])
+    safe_url = html_lib.escape(url, quote=True)
+    html = re.sub(r'<input type="text"[^>]*>', f'<input type="text" placeholder="https://secure-paypal-verify-account.tk/login" value="{safe_url}">', html)
+    html = re.sub(r'<p class="verdict-url">.*?</p>', f'<p class="verdict-url">{safe_url}</p>', html)
+    html = re.sub(r'<p class="verdict-title">.*?</p>', f'<p class="verdict-title" style="color:{color}">{result_title}</p>', html)
+    html = re.sub(r'<p class="verdict-sub">.*?</p>', f'<p class="verdict-sub">{triggered} risk signals triggered</p>', html)
+    html = re.sub(r'<div class="stamp">\s*<div class="stamp-text">.*?</div>\s*</div>', f'<div class="stamp" style="border-color:{color}"><div class="stamp-text" style="color:{color}">{stamp}</div></div>', html, flags=re.S)
+    html = re.sub(r'<span class="value">.*?</span>', f'<span class="value" style="color:{color}">{risk:.0%}</span>', html)
+    html = re.sub(r'<div class="meter-track"><div class="meter-fill"></div></div>', f'<div class="meter-track"><div class="meter-fill" style="width:{risk*100:.1f}%"></div></div>', html)
+    html = re.sub(r'<div class="evidence-head"><span class="label">Feature breakdown</span></div>.*?</div>\s*<div class="model-footer">', f'<div class="evidence-head"><span class="label">Feature breakdown</span></div>{rows}</div><div class="model-footer">', html, flags=re.S)
+    html = re.sub(r'<div class="pill"><div class="sw"></div>.*?</div>', f'<div class="pill"><div class="sw"></div>{model_name}</div>', html, count=1)
+    # Add a dataset-provenance pill right after the model-name pill so the UI
+    # always shows what data actually trained the currently-loaded model.
     badge = dataset_badge_text(dataset_info)
     
     return template.render(
@@ -128,6 +164,7 @@ with st.sidebar.expander("Retrain from data/ CSV"):
         try:
             train(sample_size=sample_size or None, invert_labels=invert_labels, progress_callback=lambda msg: status.info(msg))
             st.cache_resource.clear()
+            st.cache_data.clear()
             st.success("Retrained successfully. Reloading model...")
             st.rerun()
         except Exception as e:
@@ -144,6 +181,7 @@ with st.sidebar.expander("Retrain with your own CSV"):
         try:
             train(csv_path=str(tmp_path), invert_labels=invert_labels_csv, progress_callback=lambda msg: status.info(msg))
             st.cache_resource.clear()
+            st.cache_data.clear()
             st.success("Retrained successfully. Reloading model...")
             st.rerun()
         except Exception as e:
@@ -158,8 +196,14 @@ def get_cached_features(url_to_check, enable_live):
 
 X, feats = get_cached_features(url, live)
 risk = float(model.predict_proba(X)[0, 1])
+if not url.strip():
+    st.warning("Enter a URL to scan.")
+    st.stop()
+
+with st.spinner("Running live domain checks..." if live else "Scanning URL..."):
+    X, feats, risk, shap_values = scan_url(model, url, live)
+
 verdict = risk >= 0.50
-shap_values = explain_with_shap(model, X)
 reasons = heuristic_reasons(feats, shap_values)
 components.html(render_html(url, verdict, risk, reasons, dataset_info=dataset_info), height=1180, scrolling=True)
 

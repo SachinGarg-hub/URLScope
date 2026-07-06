@@ -1,5 +1,6 @@
 # URLScope — Intelligent Phishing URL Detection Platform
 
+**Live App:** [https://urlscope.streamlit.app/](https://urlscope.streamlit.app/)
 ## Overview
 
 URLScope is an intelligent phishing URL detection platform designed to identify malicious websites **before user interaction**. The system analyzes **lexical**, **domain**, and **behavioral** URL features using machine learning algorithms to classify URLs as **safe** or **phishing**.
@@ -133,15 +134,14 @@ The system extracts three categories of features:
 urlscope/
 │
 ├── app.py
-├── predictor.py
+├── features.py
 ├── train_model.py
-├── feature_extractor.py
+├── index.html
+├── style.css
 ├── requirements.txt
 ├── models/
 ├── data/
 │   └── final_dataset_with_all_features_v3.1.csv
-├── templates/
-│   └── index.html
 └── README.md
 ```
 
