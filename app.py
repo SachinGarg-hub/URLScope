@@ -1,5 +1,6 @@
 import html as html_lib
 import re
+import urllib.parse
 from pathlib import Path
 
 import joblib
@@ -10,6 +11,7 @@ import streamlit.components.v1 as components
 from utils import validateUrl
 from features import FEATURE_ORDER, feature_frame
 from train_model import train
+from known_safe_domains import is_known_safe
 
 MODEL_PATH = Path("models/urlscope_model.joblib")
 HTML_PATH = Path("index.html")
@@ -80,6 +82,16 @@ def scan_url(_model, url: str, live: bool):
     X, feats = feature_frame(url, live)
     risk = float(_model.predict_proba(X)[0, 1])
     shap_values = explain_with_shap(_model, X)
+
+    hostname = urllib.parse.urlparse(url if "://" in url else "https://" + url).hostname or ""
+    if is_known_safe(hostname):
+        # Domain-reputation override: pure lexical ML can't reliably tell a
+        # legitimate bank/institution login page apart from a phishing page
+        # using the same words ("login", "secure", "verify"). Dampen the
+        # score for recognized institutions rather than trusting keywords
+        # alone. See known_safe_domains.py for details and caveats.
+        risk = min(risk, 0.20)
+
     return X, feats, risk, shap_values
 
 

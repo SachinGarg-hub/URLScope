@@ -1,5 +1,7 @@
 import argparse
 import json
+import re
+import urllib.parse
 from pathlib import Path
 
 import joblib
@@ -101,11 +103,57 @@ def _urls_to_features(urls, live_checks=False):
     return pd.DataFrame(rows)[FEATURE_ORDER], keep
 
 
+from known_safe_domains import KNOWN_SAFE_DOMAINS
+
+
+def augment_with_root_domains(norm, progress_callback=None):
+    """Add bare root-domain rows (label=0) so the safe class isn't limited
+    to deep-path pages only."""
+    existing = set(norm["url"])
+    added = []
+
+    # 1. Root domains derived from the existing safe URLs themselves
+    safe_urls = norm.loc[norm["label"] == 0, "url"]
+    hosts = set()
+    for u in safe_urls:
+        try:
+            candidate = u if re_has_scheme(u) else "http://" + u
+            host = urllib.parse.urlparse(candidate).hostname
+            if host:
+                hosts.add(host.lower().lstrip("www."))
+        except Exception:
+            continue
+
+    for host in hosts:
+        if host not in existing:
+            added.append({"url": host, "label": 0})
+            existing.add(host)
+
+    # 2. Curated well-known safe domains (covers common real-world false positives)
+    for host in KNOWN_SAFE_DOMAINS:
+        if host not in existing:
+            added.append({"url": host, "label": 0})
+            existing.add(host)
+
+    if progress_callback:
+        progress_callback(f"Augmenting dataset with {len(added)} root-domain safe examples...")
+
+    if added:
+        norm = pd.concat([norm, pd.DataFrame(added)], ignore_index=True)
+    return norm
+
+
+def re_has_scheme(u):
+    import re
+    return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", u))
+
+
 def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=False, progress_callback=None):
     path = resolve_dataset_path(csv_path)
     if progress_callback:
         progress_callback(f"Loading {path}...")
     norm = load_csv_dataset(path, invert_labels=invert_labels)
+    norm = augment_with_root_domains(norm, progress_callback=progress_callback)
     if sample_size and len(norm) > sample_size:
         norm = (
             norm.groupby("label", group_keys=False)
@@ -127,19 +175,14 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
     fitted, metrics = [], []
     weights = []
     for name, model in models.items():
-        model.fit(X_train, y_train)
-        pred = model.predict(X_test)
-        prob = model.predict_proba(X_test)[:, 1]
-        f1 = f1_score(y_test, pred)
-        metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1, "roc_auc": roc_auc_score(y_test, prob)})
-        fitted.append((name.lower().replace(" ", "_"), model))
-        weights.append(f1)
         try:
             model.fit(X_train, y_train)
             pred = model.predict(X_test)
             prob = model.predict_proba(X_test)[:, 1]
-            metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1_score(y_test, pred), "roc_auc": roc_auc_score(y_test, prob)})
+            f1 = f1_score(y_test, pred)
+            metrics.append({"model": name, "accuracy": accuracy_score(y_test, pred), "precision": precision_score(y_test, pred), "recall": recall_score(y_test, pred), "f1": f1, "roc_auc": roc_auc_score(y_test, prob)})
             fitted.append((name.lower().replace(" ", "_"), model))
+            weights.append(f1)
         except Exception as exc:
             if progress_callback:
                 progress_callback(f"Skipping {name}: {exc}")
@@ -148,8 +191,6 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
         progress_callback("Fitting voting ensemble...")
 
     ensemble = VotingClassifier(estimators=fitted, voting="soft", weights=weights)
-    f1_weights = [m["f1"] for m in metrics]
-    ensemble = VotingClassifier(estimators=fitted, voting="soft", weights=f1_weights)
     ensemble.fit(X_train, y_train)
 
     ens_pred = ensemble.predict(X_test)
