@@ -98,24 +98,34 @@ def extract_features(url: str, enable_live_checks: bool = False) -> Dict[str, fl
     hostname = (parsed.hostname or "").lower()
     domain, tld = _host_parts(hostname)
     full_text = f"{hostname} {parsed.path} {parsed.query}".lower()
+
+    # IMPORTANT: canonical form excludes the guessed/original scheme entirely.
+    # Whether a training-set URL string happened to include "http://" / "https://"
+    # is a dataset-collection artifact (safe vs phishing rows were scraped with
+    # inconsistent scheme presence), not a real signal — so length/composition
+    # features must be computed on scheme-independent text to avoid leaking it.
+    canonical = f"{hostname}{parsed.path}"
+    if parsed.query:
+        canonical += f"?{parsed.query}"
+
     feats: Dict[str, float] = {
-        "url_length": len(url),
+        "url_length": len(canonical),
         "hostname_length": len(hostname),
         "path_length": len(parsed.path),
-        "num_dots": url.count("."),
+        "num_dots": canonical.count("."),
         "num_hyphens": hostname.count("-"),
-        "num_digits": sum(ch.isdigit() for ch in url),
-        "num_special_chars": len(re.findall(r"[^a-zA-Z0-9]", url)),
+        "num_digits": sum(ch.isdigit() for ch in canonical),
+        "num_special_chars": len(re.findall(r"[^a-zA-Z0-9]", canonical)),
         "has_ip": _is_ip(hostname),
-        "has_at": int("@" in url),
-        "has_https": int(parsed.scheme == "https"),
+        "has_at": int("@" in canonical),
+        "has_https": 0,  # unreliable from dataset text; only meaningful via live check below
         "has_suspicious_tld": int(tld in SUSPICIOUS_TLDS),
         "is_shortened": int(domain in SHORTENERS),
         "brand_keyword_count": _count_keywords(full_text, BRAND_KEYWORDS),
         "risk_word_count": _count_keywords(full_text, RISK_WORDS),
         "subdomain_count": max(0, len(hostname.split(".")) - 2) if hostname else 0,
         "query_param_count": len(urllib.parse.parse_qs(parsed.query)),
-        "entropy": round(_entropy(url), 3),
+        "entropy": round(_entropy(canonical), 3),
         "domain_age_days": -1,
         "ssl_valid": 0,   # default unknown; only set to 1 by live SSL check
         "reachable": 0,
