@@ -27,6 +27,7 @@ KNOWN_SAFE_DOMAINS = {
     "onlinesbi.sbi", "netbanking.hdfcbank.com", "pnbindia.in",
     "gov.in", "india.gov.in", "incometax.gov.in", "uidai.gov.in",
     "paypal.com", "adobe.com", "cloudflare.com", "mozilla.org",
+    "apnacollege.in", "claude.ai", "anthropic.com",
 }
 
 
