@@ -145,9 +145,9 @@ During development, the deployed model was found to flag **almost all URLs, incl
 
 | Script | Purpose |
 |---|---|
-| `sanity_check.py` | Runs the deployed model + allowlist against a small hand-picked set of known-safe and known-phishing-style URLs; flags false positives/negatives before you trust a retrain. |
-| `diagnose_dataset.py` | Inspects your training CSV directly — class-wise mean feature values, scheme-presence ratio, and sample raw URL strings per class, to catch dataset artifacts like the ones above. |
-| `explain_prediction.py` | Runs SHAP on a single URL against each base estimator in the ensemble, showing exactly which features are pushing the score up or down. |
+| `backend/sanity_check.py` | Runs the deployed model + allowlist against a small hand-picked set of known-safe and known-phishing-style URLs; flags false positives/negatives before you trust a retrain. |
+| `backend/diagnose_dataset.py` | Inspects your training CSV directly — class-wise mean feature values, scheme-presence ratio, and sample raw URL strings per class, to catch dataset artifacts like the ones above. |
+| `backend/explain_prediction.py` | Runs SHAP on a single URL against each base estimator in the ensemble, showing exactly which features are pushing the score up or down. |
 
 Run these after every retrain, especially if you swap in a new dataset version.
 
@@ -158,23 +158,26 @@ Run these after every retrain, especially if you swap in a new dataset version.
 ```bash
 URLScope/
 │
-├── app.py
-├── features.py
-├── train_model.py
-├── known_safe_domains.py
-├── sanity_check.py
-├── diagnose_dataset.py
-├── explain_prediction.py
-├── index.html
+├── backend/
+│   ├── data/
+│   │   ├── dataset_with_all_features_v2.csv
+│   │   └── known_safe_domains.txt
+│   ├── models/
+│   │   ├── urlscope_model.joblib
+│   │   ├── urlscope_model_compressed.joblib
+│   │   └── metrics.csv
+│   ├── utils/
+│   │   └── validateUrl.py
+│   ├── features.py
+│   ├── train_model.py
+│   ├── known_safe_domains.py
+│   ├── sanity_check.py
+│   ├── diagnose_dataset.py
+│   └── explain_prediction.py
+├── frontend/
+│   ├── app.py
+│   └── index.html
 ├── requirements.txt
-├── models/
-│   ├── urlscope_model.joblib
-│   ├── dataset_info.json
-│   └── metrics.csv
-├── data/
-│   └── dataset_with_all_features v2.csv
-├── utils/
-│   └── validateUrl.py
 └── README.md
 ```
 
@@ -216,7 +219,8 @@ pip install -r requirements.txt
 ## Train Model
 
 ```bash
-python train_model.py --csv "data/dataset_with_all_features v2.csv"
+cd backend
+python train_model.py --csv "data/dataset_with_all_features_v2.csv"
 ```
 
 This trains all five base models plus the F1-weighted Voting Ensemble, applies the root-domain augmentation described above, and saves the result to `models/urlscope_model.joblib`.
@@ -227,14 +231,14 @@ This trains all five base models plus the F1-weighted Voting Ensemble, applies t
 python sanity_check.py
 ```
 
-If any check fails, use `explain_prediction.py "<url>"` to see which feature is driving the wrong score, and `diagnose_dataset.py "<csv path>"` to check whether the underlying data has a class-wise structural bias.
+If any check fails, use `python explain_prediction.py "<url>"` to see which feature is driving the wrong score, and `python diagnose_dataset.py "<csv path>"` to check whether the underlying data has a class-wise structural bias.
 
 ---
 
 ## Run Application
 
 ```bash
-streamlit run app.py
+python -m streamlit run frontend/app.py
 ```
 
 ---

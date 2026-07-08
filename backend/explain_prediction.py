@@ -11,11 +11,12 @@ import sys
 import warnings
 warnings.filterwarnings("ignore")
 
+from pathlib import Path
 import joblib
 import numpy as np
 from features import feature_frame, FEATURE_ORDER
 
-MODEL_PATH = "models/urlscope_model.joblib"
+MODEL_PATH = Path(__file__).parent / "models" / "urlscope_model.joblib"
 
 
 def main(url):

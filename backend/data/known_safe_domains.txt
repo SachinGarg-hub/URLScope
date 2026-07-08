@@ -1,0 +1,135 @@
+# known_safe_domains.txt
+#
+# One registrable domain per line. Lines starting with # are comments/blank
+# lines are ignored. This file is the single source of truth, used by:
+#   - train_model.py (adds these as extra root-domain safe training examples)
+#   - known_safe_domains.py -> app.py (runtime risk-score dampening)
+#
+# To fix a false positive on a specific legitimate site: just add its
+# registrable domain (e.g. "example.com", not "www.example.com" or
+# "sub.example.com/path") as a new line below. No code changes needed.
+# Runtime effect is immediate (no retrain required); to also improve the
+# ML model itself on root-domain URLs generally, retrain after adding.
+
+# --- Global tech / search / social ---
+google.com
+youtube.com
+wikipedia.org
+facebook.com
+instagram.com
+whatsapp.com
+twitter.com
+x.com
+linkedin.com
+reddit.com
+github.com
+gitlab.com
+stackoverflow.com
+microsoft.com
+apple.com
+amazon.com
+netflix.com
+adobe.com
+cloudflare.com
+mozilla.org
+paypal.com
+dropbox.com
+zoom.us
+slack.com
+discord.com
+telegram.org
+pinterest.com
+tumblr.com
+quora.com
+medium.com
+wordpress.com
+blogger.com
+yahoo.com
+bing.com
+duckduckgo.com
+
+# --- AI / dev tools ---
+claude.ai
+anthropic.com
+openai.com
+chatgpt.com
+huggingface.co
+vercel.com
+netlify.com
+render.com
+heroku.com
+npmjs.com
+pypi.org
+
+# --- Global education ---
+harvard.edu
+mit.edu
+stanford.edu
+berkeley.edu
+ox.ac.uk
+cam.ac.uk
+coursera.org
+edx.org
+udemy.com
+khanacademy.org
+
+# --- Indian education ---
+amity.edu
+apnacollege.in
+amizone.net
+iitb.ac.in
+iitd.ac.in
+iitk.ac.in
+iitm.ac.in
+du.ac.in
+jnu.ac.in
+bits-pilani.ac.in
+ugc.ac.in
+aicte-india.org
+nptel.ac.in
+ncert.nic.in
+cbse.gov.in
+
+# --- Indian banking / finance ---
+sbi.co.in
+onlinesbi.sbi
+hdfcbank.com
+netbanking.hdfcbank.com
+icicibank.com
+axisbank.com
+pnbindia.in
+kotak.com
+bankofbaroda.in
+rbi.org.in
+nseindia.com
+bseindia.com
+sebi.gov.in
+paytm.com
+phonepe.com
+razorpay.com
+
+# --- Indian government ---
+gov.in
+india.gov.in
+incometax.gov.in
+uidai.gov.in
+digilocker.gov.in
+passportindia.gov.in
+epfindia.gov.in
+
+# --- Global news ---
+bbc.com
+cnn.com
+reuters.com
+nytimes.com
+theguardian.com
+
+# --- E-commerce / travel ---
+flipkart.com
+myntra.com
+irctc.co.in
+makemytrip.com
+booking.com
+airbnb.com
+uber.com
+ola.com
