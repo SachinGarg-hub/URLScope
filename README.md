@@ -304,4 +304,4 @@ URLScope provides a reliable and explainable solution for phishing detection usi
 
 ## License
 
-This project is licensed under the MIT License.
+This project is for learning and development purposes.
