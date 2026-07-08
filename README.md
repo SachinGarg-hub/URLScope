@@ -1,7 +1,7 @@
 
 # URLScope — Intelligent Phishing URL Detection Platform
 
-**Live App:** [https://urlscope.streamlit.app/](https://urlscope.streamlit.app/)
+
 
 ## Overview
 
