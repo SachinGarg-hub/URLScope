@@ -1,7 +1,8 @@
 
 # URLScope — Intelligent Phishing URL Detection Platform
+## 🌐 Live Demo
 
-
+👉 [Click here to view the live project](https://sachingarg-hub-urlscope-app-rjveox.streamlit.app/)
 
 ## Overview
 
