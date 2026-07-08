@@ -1,7 +1,13 @@
+import sys
+from pathlib import Path
+
+# Add backend to sys.path so we can import backend modules directly
+backend_path = Path(__file__).parent.parent / "backend"
+sys.path.append(str(backend_path))
+
 import html as html_lib
 import re
 import urllib.parse
-from pathlib import Path
 
 import joblib
 import pandas as pd
@@ -13,8 +19,8 @@ from features import FEATURE_ORDER, feature_frame
 from train_model import train
 from known_safe_domains import is_known_safe
 
-MODEL_PATH = Path("models/urlscope_model.joblib")
-HTML_PATH = Path("index.html")
+MODEL_PATH = backend_path / "models" / "urlscope_model.joblib"
+HTML_PATH = Path(__file__).parent / "index.html"
 
 st.set_page_config(page_title="URLSCOPE", page_icon="🛡️", layout="centered")
 
@@ -186,7 +192,7 @@ with st.sidebar.expander("Retrain with your own CSV"):
     uploaded = st.file_uploader("CSV with a url column and a label column", type=["csv"])
     invert_labels_csv = st.checkbox("Flip label polarity", value=False, key="invert_csv")
     if uploaded is not None and st.button("Retrain from uploaded CSV"):
-        tmp_path = Path("data") / uploaded.name
+        tmp_path = backend_path / "data" / uploaded.name
         tmp_path.parent.mkdir(exist_ok=True)
         tmp_path.write_bytes(uploaded.getvalue())
         status = st.empty()

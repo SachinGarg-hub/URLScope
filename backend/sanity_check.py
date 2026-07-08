@@ -8,12 +8,13 @@ Usage: python sanity_check.py
 import warnings
 warnings.filterwarnings("ignore")
 
+from pathlib import Path
 import joblib
 from features import feature_frame
 from known_safe_domains import is_known_safe
 import urllib.parse
 
-MODEL_PATH = "models/urlscope_model.joblib"
+MODEL_PATH = Path(__file__).parent / "models" / "urlscope_model.joblib"
 
 KNOWN_SAFE = [
     "https://www.google.com",

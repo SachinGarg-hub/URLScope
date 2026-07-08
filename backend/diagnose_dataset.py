@@ -39,6 +39,8 @@ def main(csv_path):
     print(feat_df.groupby("label")[FEATURE_ORDER].mean().T)
 
 
+from pathlib import Path
+
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else "data/dataset_with_all_features v2.csv"
+    path = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "data" / "dataset_with_all_features_v2.csv")
     main(path)

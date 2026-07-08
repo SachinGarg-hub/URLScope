@@ -1,6 +1,6 @@
 {
   "source": "csv",
-  "name": "dataset_with_all_features v2.csv",
+  "name": "dataset_with_all_features_v2.csv",
   "rows": 769121,
   "phishing": 211908,
   "safe": 557196

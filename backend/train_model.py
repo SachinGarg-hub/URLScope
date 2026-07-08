@@ -18,9 +18,10 @@ from xgboost import XGBClassifier
 
 from features import FEATURE_ORDER, extract_features
 
-OUT = Path("models")
+BASE_DIR = Path(__file__).parent
+OUT = BASE_DIR / "models"
 OUT.mkdir(exist_ok=True)
-DATA_DIR = Path("data")
+DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 DEFAULT_DATASET_NAME = "final_dataset_with_all_features_v3.1.csv"
