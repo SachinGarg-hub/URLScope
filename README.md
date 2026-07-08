@@ -302,13 +302,10 @@ URLScope provides a reliable and explainable solution for phishing detection usi
 ## Contributors
 
 * Sachin Garg
-* Goutam
-* Navdeep
-* Arsh Kambooj
-* Arnavdeep
+* siddharth 
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
+This project is for learning and development purposes.
