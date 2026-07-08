@@ -298,10 +298,7 @@ URLScope provides a reliable and explainable solution for phishing detection usi
 ## Contributors
 
 * Sachin Garg
-* Goutam
-* Navdeep
-* Arsh Kambooj
-* Arnavdeep
+* siddharth 
 
 ---
 
