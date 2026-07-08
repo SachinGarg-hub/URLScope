@@ -156,11 +156,9 @@ def train(csv_path=None, sample_size=None, invert_labels=False, live_checks=Fals
     norm = load_csv_dataset(path, invert_labels=invert_labels)
     norm = augment_with_root_domains(norm, progress_callback=progress_callback)
     if sample_size and len(norm) > sample_size:
-        norm = (
-            norm.groupby("label", group_keys=False)
-            .apply(lambda g: g.sample(min(len(g), sample_size // 2), random_state=42))
-            .reset_index(drop=True)
-        )
+        safe_sample = norm[norm["label"] == 0].sample(min(sum(norm["label"] == 0), sample_size // 2), random_state=42)
+        phish_sample = norm[norm["label"] == 1].sample(min(sum(norm["label"] == 1), sample_size // 2), random_state=42)
+        norm = pd.concat([safe_sample, phish_sample]).sample(frac=1, random_state=42).reset_index(drop=True)
     if progress_callback:
         progress_callback(f"Extracting features for {len(norm)} URLs...")
     X, keep = _urls_to_features(norm["url"], live_checks)

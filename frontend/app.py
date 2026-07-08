@@ -20,7 +20,6 @@ from train_model import train
 from known_safe_domains import is_known_safe
 
 MODEL_PATH = backend_path / "models" / "urlscope_model.joblib"
-COMPRESSED_MODEL_PATH = backend_path / "models" / "urlscope_model_compressed.joblib"
 HTML_PATH = Path(__file__).parent / "index.html"
 
 st.set_page_config(page_title="URLSCOPE", page_icon="🛡️", layout="centered")
@@ -28,9 +27,10 @@ st.set_page_config(page_title="URLSCOPE", page_icon="🛡️", layout="centered"
 
 @st.cache_resource
 def load_model():
-    if COMPRESSED_MODEL_PATH.exists():
-        return joblib.load(COMPRESSED_MODEL_PATH)
     if not MODEL_PATH.exists():
+        if "mount/src" in str(Path(__file__)):
+            st.error("Model not found on Streamlit Cloud. Please wait for the maintainer to upload the model.")
+            st.stop()
         train()
     return joblib.load(MODEL_PATH)
 
